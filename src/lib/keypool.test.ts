@@ -110,10 +110,12 @@ test("discovers free OpenRouter models dynamically and caches them", async () =>
       { id: "a/paid", context_length: 9, pricing: { prompt: "0.1", completion: "0.1" } },
       { id: "b/free-small", context_length: 10, pricing: { prompt: "0", completion: "0" } },
       { id: "c/big:free", context_length: 100, pricing: { prompt: "0", completion: "0" } },
-      { id: "d/image:free", context_length: 500, pricing: { prompt: "0", completion: "0" }, architecture: { input_modalities: ["text"], output_modalities: ["image"] } },
+      { id: "d/image:free", context_length: 500, pricing: { prompt: "0", completion: "0" }, architecture: { input_modalities: ["text"], output_modalities: ["text", "audio"] } },
+      { id: "e/x-content-safety:free", context_length: 900, pricing: { prompt: "0", completion: "0" } },
+      { id: "openrouter/free", context_length: 5, pricing: { prompt: "0", completion: "0" } },
     ] });
   };
-  assert.deepEqual(await getFreeOpenRouterModels(), ["c/big:free", "b/free-small"]);
+  assert.deepEqual(await getFreeOpenRouterModels(), ["openrouter/free", "c/big:free", "b/free-small"]);
   await getFreeOpenRouterModels();
   assert.equal(hits, 1);
 });
@@ -130,3 +132,4 @@ test("fallback resolver is used for the OpenRouter chain", async () => {
   assert.equal(await res.text(), "or");
   assert.deepEqual(seen, ["m1", "m2"]);
 });
+

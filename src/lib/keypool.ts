@@ -30,7 +30,12 @@ let modelCache: { at: number; ids: string[] } | null = null;
 
 const isFree = (m: OpenRouterModel) =>
   typeof m.id === "string" && ((String(m.pricing?.prompt) === "0" && String(m.pricing?.completion) === "0") || m.id.endsWith(":free"));
+// Story generation needs plain text out; this drops audio/image generators and moderation/guard models.
+const textOnly = (v: unknown) => !Array.isArray(v) || (v.length === 1 && v[0] === "text");
 const hasText = (v: unknown) => !Array.isArray(v) || v.includes("text");
+const NOT_FOR_STORIES = /safety|guard|moderation|embed|code/i;
+/** OpenRouter's own router that picks a working free model per request; the most robust first choice. */
+const FREE_ROUTER = "openrouter/free";
 
 /** Currently free, text-in/text-out OpenRouter models (largest context first), cached in memory for 1 hour. Never throws. */
 export async function getFreeOpenRouterModels(signal?: AbortSignal): Promise<string[]> {
@@ -40,9 +45,10 @@ export async function getFreeOpenRouterModels(signal?: AbortSignal): Promise<str
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const json = (await res.json()) as { data?: OpenRouterModel[] };
     const ids = (json.data ?? [])
-      .filter((m) => isFree(m) && hasText(m.architecture?.input_modalities) && hasText(m.architecture?.output_modalities))
+      .filter((m) => isFree(m) && hasText(m.architecture?.input_modalities) && textOnly(m.architecture?.output_modalities) && !NOT_FOR_STORIES.test(String(m.id)))
       .sort((a, b) => (Number(b.context_length) || 0) - (Number(a.context_length) || 0))
-      .map((m) => m.id as string);
+      .map((m) => m.id as string)
+      .sort((a, b) => Number(b === FREE_ROUTER) - Number(a === FREE_ROUTER));
     if (ids.length) modelCache = { at: Date.now(), ids };
     return ids;
   } catch (e) {
@@ -84,7 +90,7 @@ async function readErrorDetail(res: Response): Promise<string> {
 /** Logs the exact status/body of a failed Gemini call before any cooldown or failover decision is made. */
 async function logFailure(res: Response) {
   const errorBody = (await res.clone().text().catch(() => "")).slice(0, 1000);
-  console.error("Gemini API Error:", res.status, errorBody);
+  console.error("Gemini Raw Error:", res.status, errorBody);
 }
 
 const isAbort = (e: unknown) => e instanceof DOMException && e.name === "AbortError";
@@ -175,5 +181,6 @@ export async function fetchWithKeys(
     setCooldown(keys[idx], Number(res.headers.get("Retry-After")) || 60);
   }
 }
+
 
 
