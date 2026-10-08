@@ -1,4 +1,4 @@
-import { cloudUserId } from "./cloud";
+﻿import { cloudUserId } from "./cloud";
 import { getSupabase } from "./supabase/client";
 
 /**
@@ -52,7 +52,13 @@ export function subscribeKeys(l: () => void) {
 }
 
 const clean = (keys: string[]) => [...new Set(keys.map((k) => String(k).trim()).filter(Boolean))];
-const errMsg = (e: unknown) => (e instanceof Error ? e.message : "Network error");
+const errMsg = (e: unknown) => {
+  const m = e instanceof Error ? e.message : "Network error";
+  // PostgREST reports a missing table as "Could not find the table ... in the schema cache".
+  return /schema cache|user_api_keys.*(does not exist|not find)/i.test(m)
+    ? "Cloud key storage is not set up yet. Run the user_api_keys section of supabase/schema.sql in the Supabase SQL Editor"
+    : m;
+};
 
 function withTimeout<T>(p: PromiseLike<T>, ms = TIMEOUT_MS): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -206,3 +212,4 @@ export async function saveKeys(input: ApiKeys): Promise<KeySaveResult> {
     return { ok: false, error };
   }
 }
+

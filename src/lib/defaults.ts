@@ -20,16 +20,18 @@ OUTPUT
 
 /** Active free OpenRouter models, tried in order when Gemini is overloaded or limited. */
 export const OR_FALLBACK_MODELS = [
-  "meta-llama/llama-3.3-70b-instruct:free",
-  "meta-llama/llama-3.2-3b-instruct:free",
-  "qwen/qwen-2.5-7b-instruct:free",
+  "google/gemini-2.0-flash-exp:free",
+  "meta-llama/llama-3.2-1b-instruct:free",
+  "mistralai/mistral-small-24b-instruct-2501:free",
 ] as const;
 
 /** Slugs that are no longer free / have no endpoints; saved configs using them are migrated. */
 export const DEPRECATED_OR_MODELS: readonly string[] = [
   "meta-llama/llama-3.1-8b-instruct:free",
   "mistralai/mistral-7b-instruct:free",
-  "google/gemini-2.0-flash-exp:free",
+  "meta-llama/llama-3.3-70b-instruct:free",
+  "meta-llama/llama-3.2-3b-instruct:free",
+  "qwen/qwen-2.5-7b-instruct:free",
 ];
 
 export const DEFAULT_CONFIG = {
@@ -43,5 +45,6 @@ export const DEFAULT_CONFIG = {
   useOpenRouterFallback: true,
 };
 
-export const MODEL = "gemini-3.8-flash";
+export const MODEL = "gemini-2.5-flash";
+
 

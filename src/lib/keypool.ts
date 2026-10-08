@@ -3,7 +3,7 @@
 export class AllKeysLimitedError extends Error {
   waitMs: number;
   constructor(waitMs: number, detail?: string) {
-    super(`Gemini limit reached on all keys. ${detail ? `${detail} ` : ""}Try again in ${formatWait(waitMs)}.`);
+    super(`${detail ? `${detail} ` : "Gemini limit reached on all keys. "}Try again in ${formatWait(waitMs)}.`);
     this.waitMs = waitMs;
   }
 }
@@ -42,6 +42,12 @@ async function readErrorDetail(res: Response): Promise<string> {
   return text || String(res.status);
 }
 
+/** Logs the raw status/body of a failed Gemini call before any cooldown or failover decision is made. */
+async function logFailure(res: Response, keyIdx: number) {
+  const body = (await res.clone().text().catch(() => "")).slice(0, 300);
+  console.warn(`[keypool] Gemini key #${keyIdx + 1} -> HTTP ${res.status}: ${body}`);
+}
+
 const isAbort = (e: unknown) => e instanceof DOMException && e.name === "AbortError";
 
 async function useFallback(fallback: Fallback, waitMs: number, signal?: AbortSignal, prefix = "", overloaded = false): Promise<Response> {
@@ -54,9 +60,12 @@ async function useFallback(fallback: Fallback, waitMs: number, signal?: AbortSig
         if (overloaded) setTurnStatus("overloaded_failover");
         return res;
       }
-      detail += `OpenRouter fallback${model ? ` (${model})` : ""} failed: ${(await readErrorDetail(res)).slice(0, 120)}. `;
+      const reason = (await readErrorDetail(res)).slice(0, 200);
+      console.warn(`[keypool] OpenRouter ${model ?? ""} failed (${res.status}): ${reason}`);
+      detail += `OpenRouter fallback${model ? ` (${model})` : ""} failed (${res.status}): ${reason.slice(0, 120)}. `;
     } catch (e) {
       if (isAbort(e)) throw e;
+      console.warn(`[keypool] OpenRouter ${model ?? ""} request error:`, e);
       detail += `OpenRouter fallback${model ? ` (${model})` : ""} failed. `;
     }
   }
@@ -81,15 +90,17 @@ export async function fetchWithKeys(
   const { signal, fallback } = opts;
   const tried = new Set<number>();
   setTurnStatus("active");
+  let authFailure: Response | null = null;
   for (;;) {
     const pool = getPool(keys, limit);
     const idx = keys.findIndex((_, i) => !pool.states[i].blocked && !tried.has(i));
     if (idx < 0) {
       const waits = pool.states.filter((s) => s.resetAt).map((s) => s.resetAt - Date.now());
+      if (authFailure) { setTurnStatus("idle"); return authFailure; }
       const waitMs = waits.length ? Math.min(...waits) : 60_000;
       setTurnStatus("cooldown");
       if (!fallback) throw new AllKeysLimitedError(waitMs);
-      return useFallback(fallback, waitMs, signal);
+      return useFallback(fallback, waitMs, signal, "Gemini rate limit reached on all keys. ");
     }
     tried.add(idx);
     const send = () => {
@@ -97,17 +108,25 @@ export async function fetchWithKeys(
       return fetch(url, { method: "POST", body: JSON.stringify(makeBody(keys[idx])), signal });
     };
     let res = await send();
+    if (!res.ok) await logFailure(res, idx);
     // A missing model fails identically for every key, so rotating keys is pointless: go straight to the fallback.
     if (res.status === 404 && fallback) return useFallback(fallback, 60_000, signal, "Gemini model unavailable. ");
     if (res.status === 503) {
       await sleep(jitter(), signal);
       res = await send();
+      if (!res.ok) await logFailure(res, idx);
       if (res.status >= 500) {
         // Capacity problem upstream: other keys would hit the same bottleneck.
         if (!fallback) { setTurnStatus("idle"); return res; }
         return useFallback(fallback, 60_000, signal, "Gemini is overloaded. ", true);
       }
     }
+    // A rejected key (401/403) only affects that key: try the next one, without cooling anything down.
+    if (res.status === 401 || res.status === 403) {
+      authFailure = res;
+      continue;
+    }
+    // Other statuses (400 bad request, 5xx, ...) are not rate limits: no cooldown, no rotation.
     if (res.status !== 429) {
       setTurnStatus("idle");
       return res;
@@ -115,3 +134,4 @@ export async function fetchWithKeys(
     setCooldown(keys[idx], Number(res.headers.get("Retry-After")) || 60);
   }
 }
+

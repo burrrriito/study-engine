@@ -1,4 +1,4 @@
-import { buildContents, buildSystemInstruction, type TurnPayload } from "@/lib/prompt";
+﻿import { buildContents, buildSystemInstruction, type TurnPayload } from "@/lib/prompt";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -33,6 +33,7 @@ export async function POST(req: Request) {
   }
   if (!upstream.ok || !upstream.body) {
     const detail = (await upstream.text().catch(() => "")).slice(0, 300);
+    console.error(`[openrouter] ${p.openRouterModel} -> HTTP ${upstream.status}: ${detail}`);
     const headers: Record<string, string> = {};
     if (upstream.status === 429) headers["Retry-After"] = upstream.headers.get("Retry-After") || "30";
     return new Response(detail || `OpenRouter error ${upstream.status}`, { status: upstream.status || 502, headers });
