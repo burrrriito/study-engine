@@ -1,6 +1,6 @@
-# Supabase setup
+﻿# Supabase setup
 
-Story Engine uses Supabase Auth, Postgres, and Storage for signed-in accounts. Gemini and OpenRouter API keys remain in the browser's `story-engine:config` localStorage entry and are never included in the Supabase payloads.
+Story Engine uses Supabase Auth, Postgres, and Storage for signed-in accounts. Gemini and OpenRouter API keys are stored in the `user_api_keys` table (RLS: each user can only read/write their own rows) when signed in, and in the browser's `story-engine:config` localStorage entry for guests. Keys saved locally before sign-in are uploaded automatically on first login and then removed from the browser. Keys are stored as plain text protected by RLS (not application-level encryption), so anyone with access to your Supabase project's service role or database can read them.
 
 ## Configure Supabase
 
@@ -32,3 +32,4 @@ The SQL migration is idempotent for the tables, policies, bucket, and trigger. R
 - Existing browser-local stories/sessions are copied to Supabase once on sign-in. Local data is retained on the device.
 - Story images selected while signed in upload directly from the browser to Storage. Existing local base64 images are uploaded when their story is first synced.
 - Gemini/OpenRouter keys and usage/cooldown state remain browser-local and are not synchronized.
+

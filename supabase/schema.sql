@@ -135,3 +135,26 @@ create policy "story_media_objects_update" on storage.objects for update to auth
   using (bucket_id = 'story-media' and (storage.foldername(name))[1] = auth.uid()::text);
 create policy "story_media_objects_delete" on storage.objects for delete to authenticated
   using (bucket_id = 'story-media' and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- API keys (per user, per provider; several Gemini keys allowed, ordered by created_at).
+create table if not exists public.user_api_keys (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  provider text not null check (provider in ('gemini', 'openrouter')),
+  api_key text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_id, provider, api_key)
+);
+create index if not exists user_api_keys_user_idx on public.user_api_keys(user_id, provider, created_at);
+
+alter table public.user_api_keys enable row level security;
+drop policy if exists "user_api_keys_select_own" on public.user_api_keys;
+drop policy if exists "user_api_keys_insert_own" on public.user_api_keys;
+drop policy if exists "user_api_keys_update_own" on public.user_api_keys;
+drop policy if exists "user_api_keys_delete_own" on public.user_api_keys;
+create policy "user_api_keys_select_own" on public.user_api_keys for select to authenticated using (auth.uid() = user_id);
+create policy "user_api_keys_insert_own" on public.user_api_keys for insert to authenticated with check (auth.uid() = user_id);
+create policy "user_api_keys_update_own" on public.user_api_keys for update to authenticated
+  using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "user_api_keys_delete_own" on public.user_api_keys for delete to authenticated using (auth.uid() = user_id);

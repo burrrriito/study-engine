@@ -4,6 +4,7 @@ import type { User } from "@/lib/types";
 import { currentUser, importLocalToCloud, login as localLogin, logout as localLogout, register as localRegister } from "@/lib/storage";
 import { getSupabase, isSupabaseConfigured } from "@/lib/supabase/client";
 import { syncProfile } from "@/lib/cloud";
+import { hydrateKeys, resetKeys } from "@/lib/keyStorage";
 
 interface Ctx {
   user: User | null;
@@ -54,6 +55,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       sub.subscription.unsubscribe();
     };
   }, [sb]);
+
+  // Re-load API keys whenever the signed-in account changes (cloud keys for accounts, local keys for guests).
+  useEffect(() => {
+    if (!ready) return;
+    resetKeys();
+    void hydrateKeys();
+  }, [ready, user?.id]);
 
   const login = useCallback(async (email: string, password: string) => {
     if (!sb) return setUser(await localLogin(email, password));

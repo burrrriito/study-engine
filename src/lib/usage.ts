@@ -68,6 +68,19 @@ export function getPool(keys: string[], limit: number, now = Date.now()): PoolSt
   return { active, states, nextResetAt };
 }
 
+export type GeminiStatus = "idle" | "active" | "cooldown" | "overloaded_failover";
+
+export const STATUS_EVENT = "story-engine:gemini-status";
+let turnStatus: GeminiStatus = "idle";
+
+export const getTurnStatus = (): GeminiStatus => turnStatus;
+
+/** Records the state of the latest turn and notifies listeners (e.g. the HUD). */
+export function setTurnStatus(status: GeminiStatus) {
+  turnStatus = status;
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent<GeminiStatus>(STATUS_EVENT, { detail: status }));
+}
+
 export function formatWait(ms: number): string {
   const s = Math.max(0, Math.ceil(ms / 1000));
   if (s < 90) return `${s}s`;

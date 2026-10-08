@@ -13,5 +13,8 @@ export function errorResponse(e: unknown): Response {
   if (status === 404 || /NOT_FOUND|"code":\s*404/.test(msg)) {
     return new Response(`Gemini model not found or unavailable. ${msg.slice(0, 200)}`, { status: 404 });
   }
+  if (status === 503 || /UNAVAILABLE|"code":\s*503|high demand/i.test(msg)) {
+    return new Response(`Gemini is under high demand (503). ${msg.slice(0, 200)}`, { status: 503 });
+  }
   return new Response(msg.slice(0, 300), { status: status && status >= 400 && status < 600 ? status : 500 });
 }

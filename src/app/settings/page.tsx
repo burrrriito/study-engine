@@ -1,22 +1,30 @@
-"use client";
+﻿"use client";
 import { useEffect, useState } from "react";
 import { CheckCircle2, Loader2, Plus, RotateCcw, Trash2, XCircle } from "lucide-react";
 import { loadConfig, saveConfig } from "@/lib/storage";
 import { DEFAULT_GM_PROMPT } from "@/lib/defaults";
+import { useApiKeys } from "@/lib/useApiKeys";
+import KeySyncBadge from "@/components/KeySyncBadge";
 import type { GMConfig } from "@/lib/types";
 
 const OR_PRESETS = ["meta-llama/llama-3.1-8b-instruct:free", "mistralai/mistral-7b-instruct:free", "google/gemini-2.0-flash-exp:free"];
 
 export default function SettingsPage() {
   const [cfg, setCfg] = useState<GMConfig | null>(null);
+  const sync = useApiKeys();
+  const [saveErr, setSaveErr] = useState("");
   const [status, setStatus] = useState<Record<number, { s: "checking" | "ok" | "bad"; msg: string }>>({});
   const [saved, setSaved] = useState(false);
   const [orStatus, setOrStatus] = useState<{ s: "checking" | "ok" | "bad"; msg: string } | null>(null);
+  const [seeded, setSeeded] = useState(false);
+  // Wait for key hydration so the inputs render once with the right values (no flicker).
   useEffect(() => {
+    if (seeded || sync.status === "loading") return;
     const c = loadConfig();
     setCfg({ ...c, geminiApiKeys: c.geminiApiKeys.length ? c.geminiApiKeys : [""] });
-  }, []);
-  if (!cfg) return null;
+    setSeeded(true);
+  }, [seeded, sync.status]);
+  if (!cfg) return <div className="max-w-3xl space-y-8" aria-busy="true"><div className="h-8 w-48 animate-pulse rounded bg-neutral-900" /><div className="h-72 animate-pulse rounded-xl bg-neutral-900" /></div>;
   const set = (p: Partial<GMConfig>) => { setCfg({ ...cfg, ...p }); setSaved(false); };
   const setKey = (i: number, v: string) => {
     // Pasting "k1, k2" fans out into separate rows.
@@ -52,8 +60,11 @@ export default function SettingsPage() {
     <div className="max-w-3xl space-y-8">
       <h1 className="text-2xl font-semibold">Engine Settings</h1>
       <section className="space-y-3 rounded-xl border border-neutral-800 bg-neutral-900 p-5">
-        <h2 className="font-medium">Gemini API Keys</h2>
-        <p className="text-sm text-neutral-400">Stored only in this browser and sent with each request to this app&apos;s API route, then forwarded to Google. Add several keys: when one hits its quota (429), the next is used automatically. Keys are tried in order. You can paste a comma-separated list.</p>
+        <div className="flex min-h-6 items-center justify-between gap-3">
+          <h2 className="font-medium">Gemini API Keys</h2>
+          <KeySyncBadge status={sync.status} error={sync.error} showLabel />
+        </div>
+        <p className="text-sm text-neutral-400">{sync.userId ? "Saved to your account so they follow you across devices." : "Stored only in this browser."} Sent with each request to this app&apos;s API route, then forwarded to Google. Add several keys: when one hits its quota (429), the next is used automatically. Keys are tried in order. You can paste a comma-separated list.</p>
         <div className="space-y-2">
           {cfg.geminiApiKeys.map((k, i) => (
             <div key={i}>
@@ -80,7 +91,7 @@ export default function SettingsPage() {
             <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-neutral-950 transition-all ${cfg.useOpenRouterFallback ? "left-[1.375rem]" : "left-0.5"}`} />
           </button>
         </div>
-        <p className="text-sm text-neutral-400">When every Gemini key is rate limited, replies switch to a free OpenRouter model automatically. Stored only in this browser.</p>
+        <p className="text-sm text-neutral-400">When every Gemini key is rate limited, replies switch to a free OpenRouter model automatically. {sync.userId ? "The OpenRouter key is saved to your account too." : "Stored only in this browser."}</p>
         <div className="flex flex-col gap-2 sm:flex-row">
           <input type="password" className={box} placeholder="sk-or-..." value={cfg.openRouterApiKey ?? ""} onChange={(e) => { set({ openRouterApiKey: e.target.value }); setOrStatus(null); }} autoComplete="off" />
           <button onClick={validateOpenRouter} disabled={!cfg.openRouterApiKey?.trim()} className="min-h-11 shrink-0 rounded-lg bg-amber-500 px-4 py-2.5 text-sm font-semibold text-neutral-950 hover:bg-amber-400 disabled:opacity-40">Validate OpenRouter Key</button>
@@ -112,7 +123,9 @@ export default function SettingsPage() {
             <span className="text-xs text-neutral-500">Free tier is about 10. Drives the usage meter.</span></label>
         </div>
       </section>
-      <button onClick={() => { const c = clean(cfg); saveConfig(c); setCfg({ ...c, geminiApiKeys: c.geminiApiKeys.length ? c.geminiApiKeys : [""] }); setSaved(true); }} className="min-h-11 w-full rounded-lg bg-emerald-500 px-5 py-2 text-sm font-semibold text-neutral-950 hover:bg-emerald-400 sm:w-auto">{saved ? "Saved" : "Save settings"}</button>
+      <button onClick={async () => { const c = clean(cfg); setCfg({ ...c, geminiApiKeys: c.geminiApiKeys.length ? c.geminiApiKeys : [""] }); const r = await saveConfig(c); setSaveErr(r.ok ? "" : r.error); setSaved(true); }} className="min-h-11 w-full rounded-lg bg-emerald-500 px-5 py-2 text-sm font-semibold text-neutral-950 hover:bg-emerald-400 sm:w-auto">{saved ? "Saved" : "Save settings"}</button>
+      {saveErr && <p className="text-xs text-amber-400">Saved on this device, but syncing to your account failed: {saveErr}. It will retry next time you open the app.</p>}
     </div>
   );
 }
+

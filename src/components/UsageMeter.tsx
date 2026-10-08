@@ -1,12 +1,21 @@
-"use client";
+﻿"use client";
 import { useEffect, useState } from "react";
 import { ChevronDown, Gauge, KeyRound } from "lucide-react";
-import { formatWait, getPool, type PoolState } from "@/lib/usage";
+import KeySyncBadge, { keySyncLabel } from "@/components/KeySyncBadge";
+import type { KeySyncStatus } from "@/lib/keyStorage";
+import { formatWait, getPool, getTurnStatus, STATUS_EVENT, type GeminiStatus, type PoolState } from "@/lib/usage";
 
-export default function UsageMeter({ keys, limit }: { keys: string[]; limit: number }) {
+export default function UsageMeter({ keys, limit, syncStatus = "loading", syncError = null }: { keys: string[]; limit: number; syncStatus?: KeySyncStatus; syncError?: string | null }) {
   const [pool, setPool] = useState<PoolState | null>(null);
   const [now, setNow] = useState(0);
   const [open, setOpen] = useState(false);
+  const [status, setStatus] = useState<GeminiStatus>("idle");
+  useEffect(() => {
+    const on = (e: Event) => setStatus((e as CustomEvent<GeminiStatus>).detail);
+    setStatus(getTurnStatus());
+    window.addEventListener(STATUS_EVENT, on);
+    return () => window.removeEventListener(STATUS_EVENT, on);
+  }, []);
   const sig = keys.join("|");
   useEffect(() => {
     const tick = () => { setNow(Date.now()); setPool(getPool(keys, limit)); };
@@ -15,25 +24,28 @@ export default function UsageMeter({ keys, limit }: { keys: string[]; limit: num
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sig, limit]);
+  // Reserve the meter's space while keys load so it does not pop in.
+  if (syncStatus === "loading") return <div aria-hidden className="h-[34px] w-24 animate-pulse rounded-lg bg-neutral-900 sm:w-56" />;
   if (!pool || keys.length === 0) return null;
 
   const blocked = pool.active < 0;
   const shown = blocked ? Math.max(0, pool.states.findIndex((s) => s.resetAt === pool.nextResetAt)) : pool.active;
   const u = pool.states[shown];
   const pct = Math.min(100, (u.used / u.limit) * 100);
-  const tone = blocked ? "bg-red-500" : pct >= 70 ? "bg-amber-500" : "bg-emerald-500";
-  const text = blocked ? "text-red-400" : pct >= 70 ? "text-amber-400" : "text-neutral-400";
+  const overloaded = status === "overloaded_failover";
+  const tone = overloaded ? "bg-amber-500" : blocked ? "bg-red-500" : pct >= 70 ? "bg-amber-500" : "bg-emerald-500";
+  const text = overloaded ? "text-amber-400" : blocked ? "text-red-400" : pct >= 70 ? "text-amber-400" : "text-neutral-400";
   const wait = (ms: number) => (ms > 0 ? formatWait(ms) : "");
   const title = pool.states
     .map((s, i) => `Key ${i + 1}${i === pool.active ? " (active)" : ""}: ${s.blocked ? `cooling down, resets in ${wait(s.resetAt - now)}` : `${s.used}/${s.limit} this minute`}`)
-    .join("\n") + "\nUsage is estimated locally.";
+    .join("\n") + (overloaded ? "\nGemini overloaded (503): last turn used OpenRouter failover." : "") + `\n${keySyncLabel(syncStatus, syncError)}\nUsage is estimated locally.`;
 
   return (
     <>
     <div className="relative sm:hidden">
       <button type="button" aria-expanded={open} onClick={() => setOpen((o) => !o)} className="flex h-11 items-center gap-1.5 rounded-lg border border-neutral-800 bg-neutral-950 px-2.5">
         <Gauge size={14} className={text} />
-        <span className={`text-xs tabular-nums ${text}`}>{blocked ? wait(pool.nextResetAt - now) || "0s" : `${u.used}/${u.limit}`}</span>
+        <span className={`text-xs tabular-nums ${text}`}>{overloaded ? "Failover" : blocked ? wait(pool.nextResetAt - now) || "0s" : `${u.used}/${u.limit}`}</span>
         <ChevronDown size={12} className={`text-neutral-500 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       {open && (
@@ -45,6 +57,8 @@ export default function UsageMeter({ keys, limit }: { keys: string[]; limit: num
               <span className={`ml-auto tabular-nums ${s.blocked ? "text-red-400" : ""}`}>{s.blocked ? `resets ${wait(s.resetAt - now)}` : `${s.used}/${s.limit}`}</span>
             </p>
           ))}
+          {overloaded && <p className="text-xs text-amber-400">Gemini overloaded: using OpenRouter failover.</p>}
+          <p className="flex items-center gap-1.5 text-[11px] text-neutral-500"><KeySyncBadge status={syncStatus} error={syncError} showLabel /></p>
           <p className="text-[11px] text-neutral-600">Usage is estimated locally.</p>
         </div>
       )}
@@ -55,8 +69,9 @@ export default function UsageMeter({ keys, limit }: { keys: string[]; limit: num
         <div className={`h-full rounded-full transition-all duration-500 ${tone}`} style={{ width: `${blocked ? 100 : pct}%` }} />
       </div>
       <span className={`min-w-[3.25rem] text-right text-xs tabular-nums ${text}`}>
-        {blocked ? `Resets ${wait(pool.nextResetAt - now)}` : `${u.used}/${u.limit}`}
+        {overloaded ? "Failover" : blocked ? `Resets ${wait(pool.nextResetAt - now)}` : `${u.used}/${u.limit}`}
       </span>
+      <span className="flex items-center border-l border-neutral-800 pl-2"><KeySyncBadge status={syncStatus} error={syncError} /></span>
       <span className="flex items-center gap-1 border-l border-neutral-800 pl-2 text-xs text-neutral-500">
         <KeyRound size={12} />
         {blocked ? `${keys.length} keys` : `${pool.active + 1}/${keys.length}`}
@@ -72,3 +87,4 @@ export default function UsageMeter({ keys, limit }: { keys: string[]; limit: num
     </>
   );
 }
+

@@ -1,11 +1,12 @@
-import { openDB, type DBSchema, type IDBPDatabase } from "idb";
+﻿import { openDB, type DBSchema, type IDBPDatabase } from "idb";
 import type { Story, Session, GMConfig, User } from "./types";
 import { DEFAULT_CONFIG } from "./defaults";
 import * as cloud from "./cloud";
 import { cloudUserId } from "./cloud";
+import { CONFIG_KEY, getKeyState, readLocalKeys, saveKeys, writeLocalKeys, type KeySaveResult } from "./keyStorage";
 
 const NS = "story-engine";
-const K = { users: `${NS}:users`, session: `${NS}:auth`, config: `${NS}:config` };
+const K = { users: `${NS}:users`, session: `${NS}:auth` };
 
 interface DB extends DBSchema {
   stories: { key: string; value: Story; indexes: { ownerId: string } };
@@ -57,19 +58,25 @@ export const saveSession = async (s: Session) => {
   await (await db()).put("sessions", s);
 };
 // ---- config ----
+// API keys are persisted by keyStorage (Supabase when signed in, localStorage otherwise); everything else lives in localStorage.
 export function loadConfig(): GMConfig {
+  let rest: Record<string, unknown> = {};
   try {
-    const raw = JSON.parse(localStorage.getItem(K.config) || "{}");
-    const legacy: string[] = raw.geminiApiKey ? [raw.geminiApiKey] : [];
-    const keys: string[] = Array.isArray(raw.geminiApiKeys) ? raw.geminiApiKeys : legacy;
-    const { geminiApiKey: _drop, ...rest } = raw; // eslint-disable-line @typescript-eslint/no-unused-vars
-    return { ...DEFAULT_CONFIG, ...rest, geminiApiKeys: keys.map((k) => String(k).trim()).filter(Boolean) };
-  } catch {
-    return { ...DEFAULT_CONFIG };
-  }
+    const { geminiApiKey: _a, geminiApiKeys: _b, openRouterApiKey: _c, ...r } = JSON.parse(localStorage.getItem(CONFIG_KEY) || "{}"); // eslint-disable-line @typescript-eslint/no-unused-vars
+    rest = r;
+  } catch { /* use defaults */ }
+  const s = getKeyState();
+  const keys = s.userId ? { gemini: s.gemini, openrouter: s.openrouter } : readLocalKeys();
+  return { ...DEFAULT_CONFIG, ...rest, geminiApiKeys: keys.gemini, openRouterApiKey: keys.openrouter };
 }
-export const saveConfig = (c: GMConfig) => localStorage.setItem(K.config, JSON.stringify(c));
-
+export async function saveConfig(c: GMConfig): Promise<KeySaveResult> {
+  const { geminiApiKeys, openRouterApiKey, ...rest } = c;
+  // Keys are left to keyStorage; keep whatever it currently has locally.
+  writeLocalKeys(readLocalKeys());
+  const raw = JSON.parse(localStorage.getItem(CONFIG_KEY) || "{}");
+  localStorage.setItem(CONFIG_KEY, JSON.stringify({ ...raw, ...rest }));
+  return saveKeys({ gemini: geminiApiKeys, openrouter: openRouterApiKey ?? "" });
+}
 // ---- mock auth (client-side only; PBKDF2-hashed passwords) ----
 interface StoredUser extends User { salt: string; hash: string }
 const b64 = (b: ArrayBuffer | Uint8Array) => btoa(String.fromCharCode(...new Uint8Array(b as ArrayBuffer)));
@@ -154,3 +161,4 @@ export async function importLocalToCloud(localOwnerId: string): Promise<number> 
   }
   return stories.length;
 }
+

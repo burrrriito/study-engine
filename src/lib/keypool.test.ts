@@ -72,3 +72,20 @@ test("404 without fallback is returned to the caller", async () => {
   const res = await fetchWithKeys("/api/chat", ["AAAAAAAA1"], 10, (apiKey) => ({ apiKey }));
   assert.equal(res.status, 404);
 });
+
+test("503 retries once on same key then fails over without rotating keys", async () => {
+  mem.clear();
+  const seen: string[] = [];
+  (globalThis as any).fetch = async (u: string, init: { body: string }) => {
+    const b = JSON.parse(init.body);
+    seen.push(u === "/api/chat" ? b.apiKey : `or:${b.model}`);
+    if (u === "/api/chat") return new Response("{\"error\":{\"message\":\"high demand\"}}", { status: 503 });
+    return b.model === "m1" ? new Response("bad", { status: 500 }) : new Response("or");
+  };
+  const res = await fetchWithKeys("/api/chat", ["AAAAAAAA1", "BBBBBBBB2"], 10, (apiKey) => ({ apiKey }), {
+    fallback: { url: "/api/openrouter/chat", models: ["m1", "m2"], makeBody: (model) => ({ model }) },
+  });
+  assert.equal(await res.text(), "or");
+  assert.deepEqual(seen, ["AAAAAAAA1", "AAAAAAAA1", "or:m1", "or:m2"]);
+  assert.ok(!getPool(["AAAAAAAA1", "BBBBBBBB2"], 10).states[0].blocked);
+});

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import { use, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Brain, Eye, ImageIcon, EyeOff, FastForward, Loader2, Megaphone, RotateCcw, Send, Square, X, Zap } from "lucide-react";
@@ -8,6 +8,8 @@ import { AllKeysLimitedError, fetchWithKeys } from "@/lib/keypool";
 import { Lightbox, MessageBody, PromptBox } from "@/components/Chat";
 import { getLatestSessionForStory, getStory, loadConfig, saveSession, saveStory } from "@/lib/storage";
 import { parseTurn, parseVisual, stripForStream } from "@/lib/memory";
+import { useApiKeys } from "@/lib/useApiKeys";
+import { hydrateKeys } from "@/lib/keyStorage";
 import { MAX_HISTORY, type TurnPayload } from "@/lib/prompt";
 import { emptyMemory, uid, type ChatMessage, type Memory, type Session, type Story } from "@/lib/types";
 
@@ -28,7 +30,8 @@ export default function PlayPage({ params }: { params: Promise<{ storyId: string
   const [busyAction, setBusyAction] = useState<string>("");
   const [provider, setProvider] = useState<string | null>(null);
   const [cfgKeys, setCfgKeys] = useState<{ keys: string[]; limit: number }>({ keys: [], limit: 10 });
-  useEffect(() => { const c = loadConfig(); setCfgKeys({ keys: c.geminiApiKeys, limit: c.rpmLimit }); }, []);
+  const sync = useApiKeys();
+  useEffect(() => { const c = loadConfig(); setCfgKeys({ keys: c.geminiApiKeys, limit: c.rpmLimit }); }, [sync.status, sync.gemini]);
   const sessionRef = useRef<Session | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
@@ -81,6 +84,7 @@ export default function PlayPage({ params }: { params: Promise<{ storyId: string
   async function run(action: TurnPayload["action"]) {
     const cur = sessionRef.current;
     if (!cur || !story || streaming !== null) return;
+    await hydrateKeys();
     const cfg = loadConfig();
     const orKey = cfg.openRouterApiKey?.trim() ?? "";
     const useFallback = cfg.useOpenRouterFallback && !!orKey;
@@ -104,7 +108,7 @@ export default function PlayPage({ params }: { params: Promise<{ storyId: string
     try {
       const res = await fetchWithKeys("/api/chat", cfg.geminiApiKeys, cfg.rpmLimit, (apiKey) => ({ ...payload, apiKey }), {
         signal: ctrl.signal,
-        fallback: useFallback ? { url: "/api/openrouter/chat", makeBody: () => ({ ...payload, openRouterApiKey: orKey, openRouterModel: cfg.openRouterModel }) } : null,
+        fallback: useFallback ? { url: "/api/openrouter/chat", models: [...new Set([cfg.openRouterModel, "mistralai/mistral-7b-instruct:free"])], makeBody: (model) => ({ ...payload, openRouterApiKey: orKey, openRouterModel: model ?? cfg.openRouterModel }) } : null,
       });
       setProvider(res.headers.get("X-Provider") === "openrouter" ? cfg.openRouterModel : null);
       if (!res.ok || !res.body) throw new Error(await res.text());
@@ -178,7 +182,7 @@ export default function PlayPage({ params }: { params: Promise<{ storyId: string
             <Zap size={12} className="shrink-0" /> <span className="truncate">OpenRouter Fallback Active ({provider})</span>
           </span>
         )}
-        <UsageMeter keys={cfgKeys.keys} limit={cfgKeys.limit} />
+        <UsageMeter keys={cfgKeys.keys} limit={cfgKeys.limit} syncStatus={sync.status} syncError={sync.error} />
         <button title="Toggle visual triggers" onClick={() => commit({ ...session, imagesEnabled: !session.imagesEnabled })} className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ${session.imagesEnabled ? "text-emerald-400" : "text-neutral-500"}`}>{session.imagesEnabled ? <Eye size={18} /> : <EyeOff size={18} />}</button>
         <button title="Memory" onClick={() => setPanel(panel === "memory" ? "" : "memory")} className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ${panel === "memory" ? "text-amber-400" : "text-neutral-400"}`}><Brain size={18} /></button>
         <button title="Director / GM Whisper" onClick={() => setPanel(panel === "whisper" ? "" : "whisper")} className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ${panel === "whisper" ? "text-red-400" : "text-neutral-400"}`}><Megaphone size={18} /></button>
@@ -261,3 +265,4 @@ export default function PlayPage({ params }: { params: Promise<{ storyId: string
     </div>
   );
 }
+
