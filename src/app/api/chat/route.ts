@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
+﻿import { makeGenAI } from "@/lib/genai-client";
 import { buildContents, buildSystemInstruction, type TurnPayload } from "@/lib/prompt";
 import { MODEL } from "@/lib/defaults";
 import { errorResponse } from "@/lib/gemini-error";
@@ -9,7 +9,7 @@ export const maxDuration = 60;
 export async function POST(req: Request) {
   const p = (await req.json()) as TurnPayload;
   if (!p.apiKey) return new Response("Missing Gemini API key. Add it in Settings.", { status: 400 });
-  const ai = new GoogleGenAI({ apiKey: p.apiKey });
+  const ai = makeGenAI(p.apiKey);
   try {
     const stream = await ai.models.generateContentStream({
       model: MODEL,
@@ -34,3 +34,4 @@ export async function POST(req: Request) {
     return errorResponse(e);
   }
 }
+

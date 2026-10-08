@@ -1,4 +1,4 @@
-﻿import { GoogleGenAI } from "@google/genai";
+﻿import { cleanKey, isVertexKey, makeGenAI } from "@/lib/genai-client";
 import { MODEL } from "@/lib/defaults";
 
 export const runtime = "nodejs";
@@ -23,7 +23,14 @@ function readable(e: unknown): string {
 export async function POST(req: Request) {
   const { apiKey } = (await req.json().catch(() => ({}))) as { apiKey?: string };
   if (!apiKey?.trim()) return Response.json({ ok: false, error: "Enter a key first." });
-  const ai = new GoogleGenAI({ apiKey: apiKey.trim() });
+  const key = cleanKey(apiKey);
+  if (!key.startsWith("AIza") && !isVertexKey(key)) {
+    return Response.json({
+      ok: false,
+      error: "This does not look like a Gemini API key. Keys start with \"AIza\" (aistudio.google.com/apikey) or \"AQ.\" (Google Cloud express-mode key).",
+    });
+  }
+  const ai = makeGenAI(key);
   const check = () => ai.models.generateContent({ model: MODEL, contents: "Reply with OK", config: { maxOutputTokens: 5 } });
   try {
     try {
@@ -37,6 +44,11 @@ export async function POST(req: Request) {
   } catch (e) {
     // An overloaded model says nothing about the key itself: accept it and explain.
     if (statusOf(e) === 503) return Response.json({ ok: true, message: "Key accepted. Google's servers are under high load right now, so it couldn't be fully tested." });
+    if (statusOf(e) === 401 || /invalid authentication credentials/i.test(e instanceof Error ? e.message : "")) {
+      return Response.json({ ok: false, error: "Google rejected this key as an invalid credential. Check that the key is copied in full, the Generative Language / Vertex AI API is enabled for its project, and the key has no restrictions blocking it. Or create a new one at aistudio.google.com/apikey." });
+    }
     return Response.json({ ok: false, error: readable(e) });
   }
 }
+
+
