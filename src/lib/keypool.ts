@@ -16,7 +16,7 @@ export interface Fallback {
   models?: string[];
 }
 
-const RETRY_DELAY_MS = [500, 900] as const;
+const RETRY_DELAY_MS = [600, 900] as const;
 const jitter = () => RETRY_DELAY_MS[0] + Math.random() * (RETRY_DELAY_MS[1] - RETRY_DELAY_MS[0]);
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {

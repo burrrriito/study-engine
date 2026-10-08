@@ -2,12 +2,12 @@
 import { useEffect, useState } from "react";
 import { CheckCircle2, Loader2, Plus, RotateCcw, Trash2, XCircle } from "lucide-react";
 import { loadConfig, saveConfig } from "@/lib/storage";
-import { DEFAULT_GM_PROMPT } from "@/lib/defaults";
+import { DEFAULT_GM_PROMPT, OR_FALLBACK_MODELS } from "@/lib/defaults";
 import { useApiKeys } from "@/lib/useApiKeys";
 import KeySyncBadge from "@/components/KeySyncBadge";
 import type { GMConfig } from "@/lib/types";
 
-const OR_PRESETS = ["meta-llama/llama-3.1-8b-instruct:free", "mistralai/mistral-7b-instruct:free", "google/gemini-2.0-flash-exp:free"];
+const OR_PRESETS: string[] = [...OR_FALLBACK_MODELS];
 
 export default function SettingsPage() {
   const [cfg, setCfg] = useState<GMConfig | null>(null);
@@ -52,7 +52,7 @@ export default function SettingsPage() {
   async function validate(i: number) {
     setStatus((s) => ({ ...s, [i]: { s: "checking", msg: "" } }));
     const r = await fetch("/api/validate-key", { method: "POST", body: JSON.stringify({ apiKey: cfg!.geminiApiKeys[i] }) }).then((x) => x.json()).catch(() => ({ ok: false, error: "Network error" }));
-    setStatus((s) => ({ ...s, [i]: { s: r.ok ? "ok" : "bad", msg: r.ok ? "Valid" : r.error } }));
+    setStatus((s) => ({ ...s, [i]: { s: r.ok ? "ok" : "bad", msg: r.ok ? r.message || "Valid" : r.error } }));
     if (r.ok) saveConfig(clean(cfg!));
   }
   const box = "w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-3 text-base outline-none focus:border-amber-500 sm:py-2.5 sm:text-sm";

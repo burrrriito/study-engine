@@ -1,6 +1,6 @@
 ﻿import { openDB, type DBSchema, type IDBPDatabase } from "idb";
 import type { Story, Session, GMConfig, User } from "./types";
-import { DEFAULT_CONFIG } from "./defaults";
+import { DEFAULT_CONFIG, DEPRECATED_OR_MODELS } from "./defaults";
 import * as cloud from "./cloud";
 import { cloudUserId } from "./cloud";
 import { CONFIG_KEY, getKeyState, readLocalKeys, saveKeys, writeLocalKeys, type KeySaveResult } from "./keyStorage";
@@ -67,7 +67,9 @@ export function loadConfig(): GMConfig {
   } catch { /* use defaults */ }
   const s = getKeyState();
   const keys = s.userId ? { gemini: s.gemini, openrouter: s.openrouter } : readLocalKeys();
-  return { ...DEFAULT_CONFIG, ...rest, geminiApiKeys: keys.gemini, openRouterApiKey: keys.openrouter };
+  const saved = typeof rest.openRouterModel === "string" ? rest.openRouterModel.trim() : "";
+  const openRouterModel = !saved || DEPRECATED_OR_MODELS.includes(saved) ? DEFAULT_CONFIG.openRouterModel : saved;
+  return { ...DEFAULT_CONFIG, ...rest, openRouterModel, geminiApiKeys: keys.gemini, openRouterApiKey: keys.openrouter };
 }
 export async function saveConfig(c: GMConfig): Promise<KeySaveResult> {
   const { geminiApiKeys, openRouterApiKey, ...rest } = c;

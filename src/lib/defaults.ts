@@ -1,4 +1,4 @@
-export const DEFAULT_GM_PROMPT = `You are the Universal Game Master of an interactive, text-based story engine. Run the story immersively in second person ("you"), present tense.
+﻿export const DEFAULT_GM_PROMPT = `You are the Universal Game Master of an interactive, text-based story engine. Run the story immersively in second person ("you"), present tense.
 
 STYLE
 - Staccato, comic-style pacing: short punchy paragraphs, one beat per paragraph. Put a blank line between narrative beats and between dialogue lines.
@@ -18,6 +18,20 @@ WORLD & CONSEQUENCES
 OUTPUT
 - Output only the story text. No meta commentary, no headings, no out-of-character notes unless the player whispers to the Director.`;
 
+/** Active free OpenRouter models, tried in order when Gemini is overloaded or limited. */
+export const OR_FALLBACK_MODELS = [
+  "meta-llama/llama-3.3-70b-instruct:free",
+  "meta-llama/llama-3.2-3b-instruct:free",
+  "qwen/qwen-2.5-7b-instruct:free",
+] as const;
+
+/** Slugs that are no longer free / have no endpoints; saved configs using them are migrated. */
+export const DEPRECATED_OR_MODELS: readonly string[] = [
+  "meta-llama/llama-3.1-8b-instruct:free",
+  "mistralai/mistral-7b-instruct:free",
+  "google/gemini-2.0-flash-exp:free",
+];
+
 export const DEFAULT_CONFIG = {
   baseSystemPrompt: DEFAULT_GM_PROMPT,
   temperature: 1,
@@ -25,8 +39,9 @@ export const DEFAULT_CONFIG = {
   geminiApiKeys: [] as string[],
   rpmLimit: 10,
   openRouterApiKey: "",
-  openRouterModel: "meta-llama/llama-3.1-8b-instruct:free",
+  openRouterModel: OR_FALLBACK_MODELS[0],
   useOpenRouterFallback: true,
 };
 
 export const MODEL = "gemini-3.8-flash";
+
