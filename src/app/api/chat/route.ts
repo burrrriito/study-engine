@@ -1,6 +1,5 @@
-﻿import { makeGenAI } from "@/lib/genai-client";
+﻿import { streamText } from "@/lib/genai-client";
 import { buildContents, buildSystemInstruction, type TurnPayload } from "@/lib/prompt";
-import { MODEL } from "@/lib/defaults";
 import { errorResponse } from "@/lib/gemini-error";
 
 export const runtime = "nodejs";
@@ -9,19 +8,18 @@ export const maxDuration = 60;
 export async function POST(req: Request) {
   const p = (await req.json()) as TurnPayload;
   if (!p.apiKey) return new Response("Missing Gemini API key. Add it in Settings.", { status: 400 });
-  const ai = makeGenAI(p.apiKey);
   try {
-    const stream = await ai.models.generateContentStream({
-      model: MODEL,
+    const stream = await streamText(p.apiKey, {
       contents: buildContents(p),
-      config: { systemInstruction: buildSystemInstruction(p), temperature: p.temperature, topP: p.topP },
-    });
+      systemInstruction: { parts: [{ text: buildSystemInstruction(p) }] },
+      generationConfig: { temperature: p.temperature, topP: p.topP },
+    }, req.signal);
     const enc = new TextEncoder();
     return new Response(
       new ReadableStream({
         async start(c) {
           try {
-            for await (const chunk of stream) if (chunk.text) c.enqueue(enc.encode(chunk.text));
+            for await (const chunk of stream) c.enqueue(enc.encode(chunk));
             c.close();
           } catch (e) {
             c.error(e);
@@ -34,4 +32,5 @@ export async function POST(req: Request) {
     return errorResponse(e);
   }
 }
+
 
