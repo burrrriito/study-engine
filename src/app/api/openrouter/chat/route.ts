@@ -77,5 +77,6 @@ export async function POST(req: Request) {
     },
     cancel: () => reader.cancel(),
   });
-  return new Response(stream, { headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store", "X-Provider": "openrouter" } });
+  return new Response(stream, { headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store", "X-Provider": "openrouter", "X-Model": p.openRouterModel } });
 }
+

@@ -4,11 +4,11 @@ import Link from "next/link";
 import { Brain, Eye, ImageIcon, EyeOff, FastForward, Loader2, Megaphone, RotateCcw, Send, Square, X, Zap } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
 import UsageMeter from "@/components/UsageMeter";
-import { AllKeysLimitedError, fetchWithKeys } from "@/lib/keypool";
+import { AllKeysLimitedError, fetchWithKeys, getFreeOpenRouterModels } from "@/lib/keypool";
 import { Lightbox, MessageBody, PromptBox } from "@/components/Chat";
 import { getLatestSessionForStory, getStory, loadConfig, saveSession, saveStory } from "@/lib/storage";
 import { parseTurn, parseVisual, stripForStream } from "@/lib/memory";
-import { OR_FALLBACK_MODELS } from "@/lib/defaults";
+import { DEFAULT_CONFIG, OR_FALLBACK_MODELS } from "@/lib/defaults";
 import { useApiKeys } from "@/lib/useApiKeys";
 import { hydrateKeys } from "@/lib/keyStorage";
 import { MAX_HISTORY, type TurnPayload } from "@/lib/prompt";
@@ -109,9 +109,15 @@ export default function PlayPage({ params }: { params: Promise<{ storyId: string
     try {
       const res = await fetchWithKeys("/api/chat", cfg.geminiApiKeys, cfg.rpmLimit, (apiKey) => ({ ...payload, apiKey }), {
         signal: ctrl.signal,
-        fallback: useFallback ? { url: "/api/openrouter/chat", models: [...new Set([cfg.openRouterModel, ...OR_FALLBACK_MODELS])], makeBody: (model) => ({ ...payload, openRouterApiKey: orKey, openRouterModel: model ?? cfg.openRouterModel }) } : null,
+        fallback: useFallback ? { url: "/api/openrouter/chat", models: async () => {
+          const found = await getFreeOpenRouterModels(ctrl.signal);
+          // Last resort only if discovery is unreachable.
+          const pool = found.length ? found : [...OR_FALLBACK_MODELS];
+          const mine = cfg.openRouterModel;
+          return [...new Set([...(mine !== DEFAULT_CONFIG.openRouterModel || pool.includes(mine) ? [mine] : []), ...pool])];
+        }, makeBody: (model) => ({ ...payload, openRouterApiKey: orKey, openRouterModel: model ?? cfg.openRouterModel }) } : null,
       });
-      setProvider(res.headers.get("X-Provider") === "openrouter" ? cfg.openRouterModel : null);
+      setProvider(res.headers.get("X-Provider") === "openrouter" ? res.headers.get("X-Model") || cfg.openRouterModel : null);
       if (!res.ok || !res.body) throw new Error(await res.text());
       const reader = res.body.getReader();
       const dec = new TextDecoder();
@@ -266,4 +272,6 @@ export default function PlayPage({ params }: { params: Promise<{ storyId: string
     </div>
   );
 }
+
+
 

@@ -89,3 +89,44 @@ test("503 retries once on same key then fails over without rotating keys", async
   assert.deepEqual(seen, ["AAAAAAAA1", "AAAAAAAA1", "or:m1", "or:m2"]);
   assert.ok(!getPool(["AAAAAAAA1", "BBBBBBBB2"], 10).states[0].blocked);
 });
+
+test("400 is returned as-is: no cooldown, no key rotation, no fallback", async () => {
+  mem.clear();
+  const urls: string[] = [];
+  (globalThis as any).fetch = async (u: string) => { urls.push(u); return new Response("bad request body", { status: 400 }); };
+  const res = await fetchWithKeys("/api/chat", ["AAAAAAAA1", "BBBBBBBB2"], 10, (apiKey) => ({ apiKey }), { fallback: { url: "/api/openrouter/chat", makeBody: () => ({}) } });
+  assert.equal(res.status, 400);
+  assert.deepEqual(urls, ["/api/chat"]);
+  assert.ok(!getPool(["AAAAAAAA1", "BBBBBBBB2"], 10).states[0].blocked);
+});
+
+test("discovers free OpenRouter models dynamically and caches them", async () => {
+  const { getFreeOpenRouterModels, clearModelCache } = await import("./keypool.ts");
+  clearModelCache();
+  let hits = 0;
+  (globalThis as any).fetch = async () => {
+    hits++;
+    return Response.json({ data: [
+      { id: "a/paid", context_length: 9, pricing: { prompt: "0.1", completion: "0.1" } },
+      { id: "b/free-small", context_length: 10, pricing: { prompt: "0", completion: "0" } },
+      { id: "c/big:free", context_length: 100, pricing: { prompt: "0", completion: "0" } },
+      { id: "d/image:free", context_length: 500, pricing: { prompt: "0", completion: "0" }, architecture: { input_modalities: ["text"], output_modalities: ["image"] } },
+    ] });
+  };
+  assert.deepEqual(await getFreeOpenRouterModels(), ["c/big:free", "b/free-small"]);
+  await getFreeOpenRouterModels();
+  assert.equal(hits, 1);
+});
+
+test("fallback resolver is used for the OpenRouter chain", async () => {
+  mem.clear();
+  const seen: unknown[] = [];
+  (globalThis as any).fetch = async (u: string, init: { body: string }) => {
+    if (u === "/api/chat") return new Response("x", { status: 429 });
+    const { model } = JSON.parse(init.body); seen.push(model);
+    return model === "m1" ? new Response("gone", { status: 404 }) : new Response("or");
+  };
+  const res = await fetchWithKeys("/api/chat", ["AAAAAAAA1"], 10, (apiKey) => ({ apiKey }), { fallback: { url: "/or", models: async () => ["m1", "m2"], makeBody: (model) => ({ model }) } });
+  assert.equal(await res.text(), "or");
+  assert.deepEqual(seen, ["m1", "m2"]);
+});
